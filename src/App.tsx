@@ -28,7 +28,11 @@ const App = () => (
             <React.Fragment>
               <Navbar />
               <NavigationContainer>
-                <Stack.Navigator initialRouteName="Index" screenOptions={{ headerShown: false }}>
+                <Stack.Navigator 
+                  id="web-navigator"
+                  initialRouteName="Index" 
+                  screenOptions={{ headerShown: false }}
+                >
                   <Stack.Screen name="Index" component={Index} />
                   <Stack.Screen name="Auth" component={Auth} />
                   <Stack.Screen name="Feed" component={Feed} />
@@ -41,6 +45,7 @@ const App = () => (
             // Native-specific routing
             <NavigationContainer>
               <Stack.Navigator 
+                id="native-navigator"
                 initialRouteName="Index" 
                 screenOptions={{ 
                   headerShown: true
