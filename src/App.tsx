@@ -29,6 +29,7 @@ const App = () => (
               <Navbar />
               <NavigationContainer>
                 <Stack.Navigator 
+                  id={undefined}
                   initialRouteName="Index" 
                   screenOptions={{ headerShown: false }}
                 >
@@ -44,6 +45,7 @@ const App = () => (
             // Native-specific routing
             <NavigationContainer>
               <Stack.Navigator 
+                id={undefined}
                 initialRouteName="Index" 
                 screenOptions={{ 
                   headerShown: true
