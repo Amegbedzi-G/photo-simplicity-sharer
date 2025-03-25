@@ -5,6 +5,7 @@ import UserProfile from "@/components/UserProfile";
 import PostCard from "@/components/PostCard";
 import { useAuth } from "@/context/AuthContext";
 import { Post } from "@/types";
+import { supabase } from "@/integrations/supabase/client";
 
 const Profile: React.FC = () => {
   const { user, isLoading } = useAuth();
@@ -18,24 +19,47 @@ const Profile: React.FC = () => {
       return;
     }
     
-    if (user) {
-      // In a real app, we'd fetch the user's posts from the server
-      // For now, we'll use localStorage to simulate persistent posts
+    const fetchUserPosts = async () => {
+      if (!user) return;
+      
       try {
-        const storedPosts = localStorage.getItem("userPosts");
-        if (storedPosts) {
-          const parsedPosts = JSON.parse(storedPosts);
-          // Filter only this user's posts
-          const filteredPosts = parsedPosts.filter(
-            (post: Post) => post.userId === user.id
-          );
-          setUserPosts(filteredPosts);
+        const { data, error } = await supabase
+          .from('posts')
+          .select(`
+            id,
+            image_url,
+            caption,
+            created_at,
+            user_id,
+            profiles:user_id (username, profile_picture)
+          `)
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+          
+        if (error) throw error;
+        
+        if (data) {
+          const formattedPosts: Post[] = data.map(post => ({
+            id: post.id,
+            userId: post.user_id,
+            username: post.profiles.username,
+            profilePicture: post.profiles.profile_picture,
+            imageUrl: post.image_url,
+            caption: post.caption || undefined,
+            createdAt: post.created_at,
+          }));
+          
+          setUserPosts(formattedPosts);
         }
       } catch (error) {
-        console.error("Failed to load posts", error);
+        console.error('Error fetching user posts:', error);
+      } finally {
+        setLoading(false);
       }
-      
-      setLoading(false);
+    };
+    
+    if (user) {
+      fetchUserPosts();
     }
   }, [user, isLoading, navigate]);
   

@@ -5,33 +5,7 @@ import PostCard from "@/components/PostCard";
 import CreatePostButton from "@/components/CreatePostButton";
 import { useAuth } from "@/context/AuthContext";
 import { Post } from "@/types";
-
-// Mock post data (in a real app, this would be fetched from the server)
-const MOCK_POSTS: Post[] = [
-  {
-    id: "1",
-    userId: "user1",
-    username: "alex_doe",
-    imageUrl: "https://images.unsplash.com/photo-1518791841217-8f162f1e1131",
-    caption: "Enjoying the beautiful sunset today 🌅",
-    createdAt: "2023-07-10T15:00:00Z",
-  },
-  {
-    id: "2",
-    userId: "user2",
-    username: "sam_smith",
-    imageUrl: "https://images.unsplash.com/photo-1558981852-426c6c22a060",
-    caption: "Weekend getaway with friends",
-    createdAt: "2023-07-08T10:30:00Z",
-  },
-  {
-    id: "3",
-    userId: "user3",
-    username: "taylor_photo",
-    imageUrl: "https://images.unsplash.com/photo-1517849845537-4d257902454a",
-    createdAt: "2023-07-05T18:45:00Z",
-  },
-];
+import { supabase } from "@/integrations/supabase/client";
 
 const Feed: React.FC = () => {
   const { user, isLoading } = useAuth();
@@ -45,13 +19,47 @@ const Feed: React.FC = () => {
       return;
     }
     
-    // Simulate API fetch delay
-    const timer = setTimeout(() => {
-      setPosts(MOCK_POSTS);
-      setLoading(false);
-    }, 600);
+    const fetchPosts = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('posts')
+          .select(`
+            id,
+            image_url,
+            caption,
+            created_at,
+            user_id,
+            profiles:user_id (username, profile_picture)
+          `)
+          .order('created_at', { ascending: false });
+          
+        if (error) {
+          throw error;
+        }
+        
+        if (data) {
+          const formattedPosts: Post[] = data.map(post => ({
+            id: post.id,
+            userId: post.user_id,
+            username: post.profiles.username,
+            profilePicture: post.profiles.profile_picture,
+            imageUrl: post.image_url,
+            caption: post.caption || undefined,
+            createdAt: post.created_at,
+          }));
+          
+          setPosts(formattedPosts);
+        }
+      } catch (error) {
+        console.error('Error fetching posts:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
     
-    return () => clearTimeout(timer);
+    if (user) {
+      fetchPosts();
+    }
   }, [user, isLoading, navigate]);
   
   const handlePostCreated = (newPost: Post) => {

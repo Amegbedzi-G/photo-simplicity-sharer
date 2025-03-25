@@ -2,51 +2,102 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { User, AuthContextType } from "../types";
 import { useToast } from "@/components/ui/use-toast";
-
-// Mock user data (in a real app, this would be server-side)
-const MOCK_USERS: Record<string, { username: string; password: string }> = {};
+import { supabase } from "@/integrations/supabase/client";
+import { Session } from "@supabase/supabase-js";
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {
-    // Check for stored auth on mount
-    const storedAuth = localStorage.getItem("auth");
-    if (storedAuth) {
-      try {
-        const parsedAuth = JSON.parse(storedAuth);
-        setUser(parsedAuth);
-      } catch (error) {
-        console.error("Failed to parse auth data", error);
-        localStorage.removeItem("auth");
+    // Set up auth state listener first
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setSession(session);
+        
+        if (session?.user) {
+          // Get the user profile from the profiles table
+          const fetchProfile = async () => {
+            const { data, error } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', session.user.id)
+              .single();
+
+            if (data) {
+              setUser({
+                id: data.id,
+                username: data.username,
+                profilePicture: data.profile_picture,
+                createdAt: data.created_at
+              });
+            } else if (error) {
+              console.error('Error fetching user profile:', error);
+              setUser(null);
+            }
+          };
+
+          fetchProfile();
+        } else {
+          setUser(null);
+        }
       }
-    }
-    setIsLoading(false);
+    );
+
+    // Then check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      
+      if (session?.user) {
+        // Get the user profile from the profiles table
+        const fetchProfile = async () => {
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+
+          if (data) {
+            setUser({
+              id: data.id,
+              username: data.username,
+              profilePicture: data.profile_picture,
+              createdAt: data.created_at
+            });
+          } else if (error) {
+            console.error('Error fetching user profile:', error);
+            setUser(null);
+          }
+          
+          setIsLoading(false);
+        };
+
+        fetchProfile();
+      } else {
+        setUser(null);
+        setIsLoading(false);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const login = async (username: string, password: string) => {
     setIsLoading(true);
     try {
-      // Simulating server validation
-      const userData = MOCK_USERS[username];
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: `${username}@example.com`, // Using username as email for simplicity
+        password: password
+      });
       
-      if (!userData || userData.password !== password) {
-        throw new Error("Invalid credentials");
-      }
+      if (error) throw error;
       
-      // Create user profile
-      const newUser: User = {
-        id: crypto.randomUUID(),
-        username,
-        createdAt: new Date().toISOString(),
-      };
-      
-      setUser(newUser);
-      localStorage.setItem("auth", JSON.stringify(newUser));
       toast({
         title: "Welcome back!",
         description: `You've successfully logged in as ${username}`,
@@ -66,23 +117,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signup = async (username: string, password: string) => {
     setIsLoading(true);
     try {
-      // Check if username is already taken
-      if (MOCK_USERS[username]) {
+      // Check if username already exists
+      const { data: existingUser } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('username', username)
+        .single();
+        
+      if (existingUser) {
         throw new Error("Username already taken");
       }
       
-      // Store in our mock database
-      MOCK_USERS[username] = { username, password };
+      // Sign up the user
+      const { data, error } = await supabase.auth.signUp({
+        email: `${username}@example.com`, // Using username as email for simplicity
+        password: password,
+        options: {
+          data: {
+            username: username
+          }
+        }
+      });
       
-      // Create user profile
-      const newUser: User = {
-        id: crypto.randomUUID(),
-        username,
-        createdAt: new Date().toISOString(),
-      };
+      if (error) throw error;
       
-      setUser(newUser);
-      localStorage.setItem("auth", JSON.stringify(newUser));
       toast({
         title: "Account created",
         description: "Welcome to Simplicity - your account has been created successfully!",
@@ -100,11 +158,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
-    setUser(null);
-    localStorage.removeItem("auth");
-    toast({
-      title: "You've been logged out",
-      description: "Come back soon!",
+    supabase.auth.signOut().then(() => {
+      setUser(null);
+      setSession(null);
+      toast({
+        title: "You've been logged out",
+        description: "Come back soon!",
+      });
     });
   };
 

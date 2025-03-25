@@ -16,6 +16,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { v4 as uuidv4 } from 'uuid';
 
 interface CreatePostButtonProps {
   onPostCreated: (post: any) => void;
@@ -62,43 +64,77 @@ const CreatePostButton: React.FC<CreatePostButtonProps> = ({ onPostCreated }) =>
 
     setIsSubmitting(true);
     try {
-      // In a real app, we would upload the file to a storage service
-      // For now, we'll just create a mock post with the object URL
-      
-      // Convert file to base64 for demo purposes
-      const reader = new FileReader();
-      reader.readAsDataURL(imageFile);
-      reader.onload = () => {
-        const base64Image = reader.result as string;
-        
-        const newPost = {
-          id: crypto.randomUUID(),
-          userId: user.id,
-          username: user.username,
-          profilePicture: user.profilePicture,
-          imageUrl: base64Image,
-          caption: caption.trim() || undefined,
-          createdAt: new Date().toISOString(),
-        };
-        
-        onPostCreated(newPost);
-        
-        toast({
-          title: "Post created",
-          description: "Your photo has been shared successfully",
-        });
-        
-        setOpen(false);
-        setCaption("");
-        clearImage();
+      // Upload the image to Supabase storage
+      const fileExt = imageFile.name.split('.').pop();
+      const fileName = `${uuidv4()}.${fileExt}`;
+      const filePath = `${user.id}/${fileName}`;
+
+      // Upload the image
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('posts')
+        .upload(filePath, imageFile);
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      // Get the public URL
+      const { data: urlData } = supabase.storage
+        .from('posts')
+        .getPublicUrl(filePath);
+
+      const publicUrl = urlData.publicUrl;
+
+      // Create the post in the database
+      const { data: postData, error: postError } = await supabase
+        .from('posts')
+        .insert({
+          user_id: user.id,
+          image_url: publicUrl,
+          caption: caption.trim() || null
+        })
+        .select(`
+          id, 
+          image_url, 
+          caption, 
+          created_at, 
+          user_id, 
+          profiles:user_id (username, profile_picture)
+        `)
+        .single();
+
+      if (postError) {
+        throw postError;
+      }
+
+      // Format the post for the frontend
+      const newPost = {
+        id: postData.id,
+        userId: postData.user_id,
+        username: postData.profiles.username,
+        profilePicture: postData.profiles.profile_picture,
+        imageUrl: postData.image_url,
+        caption: postData.caption || undefined,
+        createdAt: postData.created_at,
       };
+
+      onPostCreated(newPost);
+
+      toast({
+        title: "Post created",
+        description: "Your photo has been shared successfully",
+      });
+
+      setOpen(false);
+      setCaption("");
+      clearImage();
     } catch (error) {
+      console.error('Error creating post:', error);
       toast({
         title: "Failed to create post",
         description: "There was an error uploading your photo",
         variant: "destructive",
       });
-      console.error(error);
     } finally {
       setIsSubmitting(false);
     }
